@@ -12,6 +12,7 @@
 //   - 恢复完成后热重载各 store（无需重启 App）。
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 
@@ -183,7 +184,7 @@ class BackupService {
 
       final dirs = await NativeBridge.appDirs();
       final filesDir = dirs.files;
-      final novelsDir = Directory('${filesDir}/novels');
+      final novelsDir = Directory('$filesDir/novels');
 
       // 收集备份里的本地小说条目名（<bookId>.<ext>）
       final bookEntries = <String>{};
@@ -206,10 +207,10 @@ class BackupService {
             bookCount = rewritten.$2;
             data = Uint8List.fromList(utf8.encode(rewritten.$1));
           }
-          await _writeFile(File('${filesDir}/$name'), data);
+          await _writeFile(File('$filesDir/$name'), data);
         } else if (name.startsWith('covers/')) {
           final base = name.substring('covers/'.length);
-          await _writeFile(File('${filesDir}/covers/$base'), data);
+          await _writeFile(File('$filesDir/covers/$base'), data);
         } else if (name.startsWith('books/')) {
           final base = name.substring('books/'.length);
           await _writeFile(File('${novelsDir.path}/$base'), data);
