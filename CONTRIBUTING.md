@@ -1,0 +1,111 @@
+# 参与开发
+
+感谢对「樱读」感兴趣！本文档说明本地开发、验证与提交规范。
+
+## 环境要求
+
+| 项目 | 版本 |
+|------|------|
+| Flutter | stable（Dart 3.9+） |
+| Android SDK | compileSdk 36 / minSdk 24 |
+| Java | 17（Flutter 默认） |
+
+```bash
+flutter pub get
+flutter run                      # 调试运行
+flutter build apk --release --target-platform android-arm64   # 打包（见下方说明）
+```
+
+> **单架构构建**：本项目的 AOT 在低内存设备上多架构并构建容易 OOM/崩溃，
+> 日常出包统一用 `--target-platform android-arm64`。
+
+## 代码结构
+
+```
+lib/
+  main.dart                  # 入口：初始化各 Store + ensureBuiltinSources
+  src/
+    app.dart                 # MaterialApp + 全局覆盖层（桌宠 / 引导 / 彩蛋）
+    data/                    # 数据层（无 UI 依赖，可单测）
+      book_store.dart        # 书架与进度
+      pet_store.dart         # 桌宠亲密度 / 点心 / 位置 / 显示开关
+      pet_mood.dart          # 桌宠情绪状态机（生气、锁屏门槛、台词池）
+      pet_guide.dart         # 新手引导控制器（步骤、劝导、软化解锁）
+      prefs.dart             # 应用与阅读设置
+      stats_store.dart       # 阅读统计与书签
+    source/                  # 书源引擎（规则分析 / 请求层 / 并发搜索 / 正文解析）
+    ui/                      # 页面与组件
+      widgets/pet_overlay.dart      # 全局悬浮桌宠
+      widgets/pet_guide_overlay.dart# 新手引导层
+      widgets/pet_egg.dart          # 全屏锁定彩蛋
+    platform/native_bridge.dart     # MethodChannel（权限 / 常亮 / 电量 / 目录）
+tool/                        # 开发工具（图标生成、素材管线、诊断脚本）
+docs/                        # 路线图与专项记录
+```
+
+## 验证基线（每次改动都要过）
+
+```bash
+dart format lib test           # 0 改动
+flutter analyze                # No issues found
+flutter test                   # 全部通过
+```
+
+三条全绿才算完成。新增功能请**同时补测试**（数据层优先做成可单测的纯逻辑，UI 尽量薄）。
+
+## 版本与发版（每次更新必读）
+
+**版本号不是固定值**——`1.0.0` 只是对外起点，之后每次更新/发版都要递增：
+
+| 位置 | 示例 | 说明 |
+|------|----------|------|
+| `pubspec.yaml` | `version: 1.0.1+52` | 语义版本 + build 号；**build 号只增不减** |
+| `lib/src/app_info.dart` | `version = '1.0.1'` | 设置页「关于」展示（不含 build 号） |
+
+两处必须一致：`test/version_sync_test.dart` 与 `./tool/release.sh` 都会把关。
+
+递增规则（[语义化版本](https://semver.org/lang/zh-CN/)）：
+
+- **修复** `1.0.0 → 1.0.1` ｜ **新增功能** `1.0.1 → 1.1.0` ｜ **不兼容变更** `1.1.0 → 2.0.0`
+- build 号（`+N`）每次发版 **+1**，不复用（否则无法覆盖安装）
+
+发版流程：
+
+1. 递增版本号（上面两处）+ 更新 `CHANGELOG.md`（新增 `## [x.y.z] - 日期` 段）
+2. 跑 `./tool/release.sh`（版本预检 → 格式化 → 分析 → 全量测试 → 构建）
+3. 产物归档为 `樱读-vx.y.z.apk`（同时放一份到 `Download/`）
+4. 提交并推送；打 tag `vx.y.z`；在 GitHub 建 Release 并附 APK
+5. push 后 CI 会自动复跑检查并构建（仓库 Actions 页可查看）
+
+> ⚠️ **Release 必须附 APK 附件**：应用内「检查更新」读取的就是 Release 的
+> `assets[].browser_download_url`。**只打 tag 不发 Release、或 Release 不带 APK**，
+> 用户端一律检测不到更新。Release 的标题与说明也会直接展示在更新公告弹窗里。
+
+## 提交规范
+
+- 提交信息：`类型: 简述`，类型用 `feat` / `fix` / `docs` / `test` / `refactor` / `chore`。
+  例：`feat: 桌宠阅读时乱跑`、`fix: 在线正文只取第一段`。
+- 一个提交只做一件事；涉及行为变更时同步更新 `CHANGELOG.md`。
+- 新增或调整 UI 时，如涉及美术资源，请说明素材来源（AI 生成 / 手绘 / 授权）。
+
+## 关于书源与素材合规（重要）
+
+- 内置源分为两类：**公版内容源**（中文维基文库，CC BY-SA）与**第三方聚合源**
+  （好看吗 / 笔趣阁——搜索链路为「令牌页 + POST 表单」，见
+  `assets/sources/builtin_sources.json` 的 `preRequest` / `searchUrl` 注释）。
+  第三方源失效时在资产的 `legacyBuiltinUrls` 里登记地址即可下线
+  （`SourceStore.ensureBuiltinSources()` 升级时清理，用户自建源不受影响）——
+  注意：**已恢复为内置源的地址不要再登记**，否则会被自动清掉。
+- AI 生成素材请只提交**最终入库**的那一张；中间候选图属于 `tool/artwork/candidates/`，已在 `.gitignore` 中。
+- API Key 等凭据**绝不入库**：管线工具统一从 `/tmp/sf_key` 读取。
+
+## 美术风格约定
+
+- 目标风格：**日系电视动画赛璐璐上色**（干净线条、平涂或简单光影）。
+- 需要明确排除：写实、3D、厚涂、油光、电影感。
+- Q 版（chibi）与常规立绘用途不同：**App 图标 / 桌宠**用 Q 版；**开屏 / 封面**用常规立绘。
+
+## 报告问题
+
+请附上：版本号（设置页可见）、复现步骤、期望与实际表现；
+涉及 UI 的尽量带截图。桌宠彩蛋是**真锁定**（只能重启 App），截图时请注意。
